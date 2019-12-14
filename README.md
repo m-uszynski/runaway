@@ -17,5 +17,10 @@ This is a simple arcade game in which the player must avoid police cars.
 ## Screenshot
 ![Game](./screenshots/game.png)
 
+## User guide
+* Car control: `Up arrow`, `Down arrow`, `Left arrow`, `Right arrow`
+* Shooting: `Spacebar`
+* Placing bombs: `1`
+
 ## Live preview
-* Go to https://m-uszynski.github.io/runaway/(https://m-uszynski.github.io/runaway/)
+* Go to https://m-uszynski.github.io/runaway/
