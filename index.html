@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Gra</title>
+    <script src="//cdn.jsdelivr.net/npm/phaser-ce@2.13.3/build/phaser.js"></script>
+</head>
+
+<body>
+    <script type="text/javascript">
+
+        var config = {
+            width: 800,
+            height: 600,
+            renderer: Phaser.CANVAS,
+            state: {
+                preload: preload,
+                create: create,
+                update: update,
+                render: render
+            }
+        }
+
+        // CONFIG
+        var game = new Phaser.Game(config);
+
+        var backgroundMap;
+
+        var player;
+        var playerSpeed = 400;
+        var playerLife;
+        var lifeText = "Life: ";
+
+        var fireButton;
+        var weapon;
+        var bulletSpeed = 600;
+        var fireRate = 300;
+
+        var polices;
+        var policeSpeed = 200;
+        var bossHealth = 2;
+
+        var coins;
+
+        var score;
+        var scoreText = "Score: ";
+        var sprite;
+
+        var bombs;
+        var keyBomb;
+        var bombForUse;
+        var bombText = "Bombs: ";
+
+        var hearts;
+        var heartRatio = 5; // 20% (1/5) chance to drop heart instead coin from police
+        var heartBossRatio = 3; // 33.3% (1/3) chance to drop heart instead coin from boss
+
+        // sound
+        var findMoneySound;
+        var findItemSound;
+        var shootSound;
+        var explosionSound;
+        var gameOverSound;
+        var bombDropSound;
+
+        // W A S D
+        var WKey;
+        var AKey;
+        var SKey;
+        var DKey;
+
+        function preload() {
+            game.load.image('background', 'assets/debug-grid-1920x1920.png');
+            game.load.image('background-gameOver', 'assets/debug-grid-gameOver.png');
+            game.load.image('player', 'assets/player.png');
+            game.load.image('bullet', 'assets/ball.png');
+
+            game.load.image('bomb', 'assets/bomb.png');
+            game.load.spritesheet('police', 'assets/policeSprite.png', 98, 185, 2);
+            game.load.spritesheet('coin', 'assets/money.png', 16, 16, 12);
+            game.load.spritesheet('explosion', 'assets/explosion.png', 192, 192, 8);
+            game.load.spritesheet('heart', 'assets/hearts.png', 120, 120, 5);
+            game.load.image('restartBtn', 'assets/restart.png');
+
+            game.load.image('boss', 'assets/boss.png');
+            game.load.image('bush', 'assets/bush.png');
+            game.load.image('red_bar', 'assets/red_bar.png');
+            game.load.image('green_bar', 'assets/green_bar.png');
+            game.load.image('lake', 'assets/lake.png');
+            game.load.physics('lake_physics', 'assets/lake.json');
+            game.load.physics('bush_physics', 'assets/bush.json');
+            game.load.image('house', 'assets/house.png');
+            game.load.physics('house_physics', 'assets/house.json');
+
+            // Sounds
+            game.load.audio('findmoney', 'sounds/Find_Money.mp3');
+            game.load.audio('finditem', 'sounds/Find_Item.mp3');
+            game.load.audio('shoot', 'sounds/shoot.mp3');
+            game.load.audio('explosion', 'sounds/thunder.mp3');
+            game.load.audio('gameOver', 'sounds/Hero_Dies.mp3');
+            game.load.audio('bombDrop', 'sounds/Bomb_Drop.mp3');
+        }
+
+        function create() {
+            playerLife = 3;
+            score = 0;
+            bombForUse = 5;
+            // Configuration game
+            backgroundMap = game.add.tileSprite(0, 0, 1920, 1920, 'background');
+            game.world.setBounds(0, 0, 1920, 1920);
+            game.physics.startSystem(Phaser.Physics.P2JS);
+
+            findMoneySound = game.add.audio('findmoney');
+            findItemSound = game.add.audio('finditem');
+            shootSound = game.add.audio('shoot');
+            explosionSound = game.add.audio('explosion');
+            gameOverSound = game.add.audio('gameOver');
+            bombDropSound = game.add.audio('bombDrop');
+
+            createLake();
+            createHouse();
+            addBush(400, 800);
+            addBush(1500, 1000);
+            addBush(1000, 1300);
+
+            coins = game.add.group();
+            bombs = game.add.group();
+
+            // Player
+            player = game.add.sprite(game.world.centerX, game.world.centerY, 'player');
+            player.scale.setTo(0.05, 0.05);
+            game.physics.p2.enable(player);
+            game.camera.follow(player);
+
+            // Arrows (up,down,left,right)
+            cursors = game.input.keyboard.createCursorKeys();
+
+            // Weapon (SPACE)
+            weapon = game.add.weapon(1, 'bullet');
+            weapon.bullets.setAll('scale.x', 1.5);
+            weapon.bullets.setAll('scale.y', 1.5);
+            weapon.bulletKillType = Phaser.Weapon.KILL_CAMERA_BOUNDS;
+            weapon.bulletSpeed = bulletSpeed;
+            weapon.fireRate = fireRate;
+            weapon.bulletAngleVariance = 10;
+            weapon.trackSprite(player, 5, 0, true);
+
+            fireButton = this.input.keyboard.addKey(Phaser.KeyCode.SPACEBAR);
+
+            // Police
+            polices = game.add.group();
+            bosses = game.add.group();
+            game.time.events.repeat(Phaser.Timer.SECOND * 5, 99999, addPolice, this);
+            game.time.events.repeat(Phaser.Timer.SECOND * 35, 99999, addBoss, this);
+
+
+            // Display score count
+            sprite = game.add.sprite(0, 0);
+            sprite.fixedToCamera = true;
+            var style = { font: "bold 32px Arial", fill: "#fff" };
+            sT = game.add.text(0, 0, scoreText + score, style);
+            sprite.addChild(sT);
+            sprite.cameraOffset.x = 10;
+            sprite.cameraOffset.y = 10;
+
+            // Display bomb for use count
+            bT = game.add.text(200, 0, bombText + bombForUse, style);
+            sprite.addChild(bT);
+
+            // Display life count
+            lT = game.add.text(430, 0, lifeText + playerLife, style);
+            sprite.addChild(lT);
+
+            // Bomb
+            keyBomb = game.input.keyboard.addKey(Phaser.Keyboard.ONE);
+            keyBomb.onDown.add(() => addBomb(player.body.x - 25, player.body.y - 25), this);
+
+            // Heart
+            hearts = game.add.group();
+
+            // W A S D
+            WKey = game.input.keyboard.addKey(Phaser.Keyboard.W);
+            AKey = game.input.keyboard.addKey(Phaser.Keyboard.A);
+            SKey = game.input.keyboard.addKey(Phaser.Keyboard.S);
+            DKey = game.input.keyboard.addKey(Phaser.Keyboard.D);
+        }
+
+        function addPolice() {
+            var police = polices.create(game.rnd.integerInRange(20, 1900), game.rnd.integerInRange(20, 1900), 'police');
+            var policeAnimation = police.animations.add('policeAnim');
+            police.animations.play('policeAnim', 10, true);
+            police.scale.setTo(0.3, 0.3);
+            game.physics.p2.enable(police, false);
+        }
+
+        function addHeart(x, y) {
+            var heart = hearts.create(x, y, 'heart');
+            var heartAnimation = heart.animations.add('heartAnim');
+            heart.scale.setTo(0.2, 0.2);
+            heart.animations.play('heartAnim', 15, true);
+
+        }
+
+        function addCoin(x, y) {
+            var coin = coins.create(x, y, 'coin');
+            var coinAnimation = coin.animations.add('coinAnim');
+            coin.animations.play('coinAnim', 30, true);
+            coin.scale.setTo(1.5, 1.5);
+            // game.physics.p2.enable(coin, false);
+        }
+
+        function addBomb(x, y) {
+            if (bombForUse < 1) return;
+            var bomb = bombs.create(x, y, 'bomb');
+            bomb.scale.setTo(0.2, 0.2);
+            bombForUse--;
+            bombDropSound.play();
+            sprite.getChildAt(1).setText(bombText + bombForUse);
+        }
+
+        function createLake() {
+            lake = game.add.sprite(500, 500, 'lake');
+            lake.enableBody = true;
+            game.physics.p2.enable([lake], false);
+            lake.body.clearShapes();
+            lake.body.loadPolygon('lake_physics', 'lake');
+            lake.body.static = true;
+        }
+
+        function addBush(x, y) {
+            let bush = game.add.sprite(x, y, 'bush');
+            bush.enableBody = true;
+            game.physics.p2.enable([bush], false);
+            bush.body.clearShapes();
+            bush.body.loadPolygon('bush_physics', 'bush');
+            bush.body.static = true;
+        }
+
+        function createHouse() {
+            let house = game.add.sprite(600, 320, 'house');
+            house.enableBody = true;
+            game.physics.p2.enable([house], false);
+            house.body.clearShapes();
+            house.body.loadPolygon('house_physics', 'house');
+            house.body.static = true;
+        }
+
+        function addBoss() {
+            var boss = bosses.create(game.rnd.integerInRange(20, 1900), game.rnd.integerInRange(20, 1900), 'boss');
+            boss.scale.setTo(0.2, 0.2);
+            boss.health = bossHealth;
+            game.physics.p2.enable(boss, false);
+        }
+
+        function addExplosion(x, y) {
+            var explo = game.add.sprite(x, y, 'explosion');
+            explo.scale.setTo(0.3, 0.3);
+            var boom = explo.animations.add('exploBoom');
+            explo.animations.play('exploBoom', 30, false);
+            explosionSound.play();
+        }
+
+        function update() {
+            polices.forEachAlive(movePolice, this);
+
+            // check collision bullet with police
+            polices.forEach(function (item) {
+                if (checkOverLap(item, weapon.bullets)) {
+                    game.camera.shake(0.01, 200);
+
+                    addExplosion(item.world.x, item.world.y);
+
+                    if (Math.round(Math.random() * (heartRatio - 1)) === 0) addHeart(item.world.x, item.world.y);
+                    else addCoin(item.world.x, item.world.y);
+
+                    polices.remove(item);
+                    return;
+                }
+                if (checkOverLap(item, player)) {
+                    addExplosion(item.world.x, item.world.y);
+                    playerLife--;
+                    polices.remove(item);
+                    sprite.getChildAt(2).setText(lifeText + playerLife);
+
+                    if (playerLife < 1) {
+                        gameOverSound.play();
+                        var gameOver = game.add.sprite(0, 0);
+                        backgroundMap.loadTexture('background-gameOver');
+                        gameOver.fixedToCamera = true;
+                        var styleGameOver = { font: "bold 38px Arial", fill: "#fff", boundsAlignH: "center", boundsAlignV: "middle" };
+                        gO = game.add.text(0, 0, "GAME OVER", styleGameOver);
+                        gO.setTextBounds(0, 200, 800, 100);
+                        gameOver.addChild(gO);
+                        polices.kill();
+                        bosses.kill();
+                        player.kill();
+                        button = game.add.button(400 - 90, 320, 'restartBtn', restartGame, this);
+                        button.scale.setTo(0.5, 0.5);
+                        gameOver.addChild(button);
+                    }
+                    else {
+                        game.camera.shake(0.01, 300);
+                        game.camera.flash(0xff0000, 100);
+                    }
+
+                    return;
+                }
+            })
+
+            // check collision boss with player
+            bosses.forEachAlive(movePolice, this);
+
+            bosses.forEach((item, index, arr) => {
+                console.log(item.health);
+                if (checkOverLap(item, weapon.bullets)) {
+                    weapon.bullets.getChildAt(0).kill();
+                    item.health--;
+                    game.camera.shake(0.01, 200);
+
+                    addExplosion(item.world.x, item.world.y);
+
+                    if (item.health <= 0) {
+
+                        if (Math.round(Math.random() * (heartBossRatio - 1)) === 0) addHeart(item.world.x, item.world.y);
+                        else addCoin(item.world.x, item.world.y);
+
+                        bosses.remove(item);
+                        return;
+                    }
+                }
+
+                if (checkOverLap(item, player)) {
+                    addExplosion(item.world.x, item.world.y);
+                    playerLife--;
+                    bosses.remove(item);
+                    sprite.getChildAt(2).setText(lifeText + playerLife);
+
+                    if (playerLife < 1) {
+                        gameOverSound.play();
+                        var gameOver = game.add.sprite(0, 0);
+                        backgroundMap.loadTexture('background-gameOver');
+                        gameOver.fixedToCamera = true;
+                        var styleGameOver = { font: "bold 38px Arial", fill: "#fff", boundsAlignH: "center", boundsAlignV: "middle" };
+                        gO = game.add.text(0, 0, "GAME OVER", styleGameOver);
+                        gO.setTextBounds(0, 200, 800, 100);
+                        gameOver.addChild(gO);
+                        bosses.kill();
+                        polices.kill();
+                        player.kill();
+                        button = game.add.button(400 - 90, 320, 'restartBtn', restartGame, this);
+                        button.scale.setTo(0.5, 0.5);
+                        gameOver.addChild(button);
+                    }
+                    else {
+                        game.camera.shake(0.01, 300);
+                        game.camera.flash(0xff0000, 100);
+                    }
+
+                    return;
+                }
+            })
+
+
+            function restartGame() {
+                game.state.restart();
+            }
+
+            // check collision coin with player
+            coins.forEach(function (item) {
+                if (checkOverLap(item, player)) {
+                    score++;
+                    coins.remove(item);
+                    findMoneySound.play();
+                    sprite.getChildAt(0).setText(scoreText + score);
+                    return;
+                }
+            })
+
+            // check collision bomb with police
+            bombs.forEach(function (itemB) {
+                polices.forEach(function (itemP) {
+                    if (checkOverLap(itemB, itemP)) {
+                        game.camera.shake(0.05, 200);
+                        bombForUse++;
+                        sprite.getChildAt(1).setText(bombText + bombForUse);
+                        addExplosion(itemP.world.x, itemP.world.y);
+
+                        if (Math.round(Math.random() * (heartRatio - 1)) === 0) addHeart(itemP.world.x, itemP.world.y);
+                        else addCoin(itemP.world.x, itemP.world.y);
+
+                        polices.remove(itemP);
+                        bombs.remove(itemB);
+                        return;
+                    }
+                })
+
+                bosses.forEach(function (itemP) {
+                    if (checkOverLap(itemB, itemP)) {
+                        game.camera.shake(0.05, 200);
+                        bombForUse++;
+                        sprite.getChildAt(1).setText(bombText + bombForUse);
+                        addExplosion(itemP.world.x, itemP.world.y);
+
+                        itemP.health--;
+                        game.camera.shake(0.01, 200);
+
+                        addExplosion(itemP.world.x, itemP.world.y);
+
+                        if (itemP.health <= 0) {
+
+                            if (Math.round(Math.random() * (heartBossRatio - 1)) === 0) addHeart(itemP.world.x, itemP.world.y);
+                            else addCoin(itemP.world.x, itemP.world.y);
+
+                            bosses.remove(itemP);
+                            return;
+                        }
+
+                        bombs.remove(itemB);
+                        return;
+                    }
+                })
+            })
+
+            // check collision heart with player
+            hearts.forEach(function (item) {
+                if (checkOverLap(item, player)) {
+                    hearts.remove(item);
+                    playerLife++;
+                    findItemSound.play();
+                    sprite.getChildAt(2).setText(lifeText + playerLife);
+                    return;
+                }
+            })
+
+            // ROTATION PLAYER (LEFT, RIGHT)
+            if (cursors.left.isDown || AKey.isDown) {
+                player.body.rotateLeft(100);
+            }
+            else if (cursors.right.isDown || DKey.isDown) {
+                player.body.rotateRight(100);
+            }
+            else {
+                player.body.setZeroRotation();
+            }
+
+            // ACCELERATION PLAYER (UP, DOWN)
+            if (cursors.up.isDown || WKey.isDown) {
+                player.body.thrustRight(playerSpeed);
+            }
+            else if (cursors.down.isDown || SKey.isDown) {
+                player.body.thrustLeft(playerSpeed);
+            }
+
+            // Fire
+            if (fireButton.isDown) {
+                shootSound.play();
+                weapon.fire();
+            }
+        }
+
+        function render() {
+            // weapon.debug();
+        }
+
+        function movePolice(police) {
+            accelerateToObject(police, player, policeSpeed);
+        }
+
+        function accelerateToObject(obj1, obj2, speed) {
+            if (typeof speed === 'undefined') { speed = 60; }
+            var angle = Math.atan2(obj2.y - obj1.y, obj2.x - obj1.x);
+            obj1.body.rotation = angle + game.math.degToRad(90);  // correct angle of angry bullets (depends on the sprite used)
+            obj1.body.force.x = Math.cos(angle) * speed;    // accelerateToObject 
+            obj1.body.force.y = Math.sin(angle) * speed;
+        }
+
+        function checkOverLap(spriteA, spriteB) {
+            var boundsA = spriteA.getBounds();
+            var boundsB = spriteB.getBounds();
+            return Phaser.Rectangle.intersects(boundsA, boundsB);
+        }
+    </script>
+</body>
+
+</html>
