@@ -13,6 +13,7 @@ This is a simple arcade game in which the player must avoid police cars.
 * Interactions such as shooting and placing bombs
 * Collecting coins and hearts
 * Animated objects
+* Restarting game after losing
 
 ## Screenshot
 ![Game](./screenshots/game.png)
