@@ -25,3 +25,7 @@ This is a simple arcade game in which the player must avoid police cars.
 
 ## Live preview
 * Go to https://m-uszynski.github.io/runaway/
+
+## Authors
+* Michał Zaorski
+* Mateusz Uszyński
